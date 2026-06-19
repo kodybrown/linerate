@@ -1,0 +1,11 @@
+# Set default behaviors to automatically normalize line endings.
+# ===========================================================================
+# Handle line endings automatically for files detected as text
+# and leave all files detected as binary untouched.
+
+# Explicitly declare all files to always have specific line-endings.
+* text eol=lf
+
+# Force CRLF line-endings.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
