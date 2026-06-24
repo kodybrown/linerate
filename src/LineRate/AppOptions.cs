@@ -135,11 +135,26 @@ internal sealed class AppOptions
   )]
   public bool IgnoreCase { get; set; }
 
+  [AppArgument(
+    namedParameters: ["multiplier"],
+    description: "Multiplies the matching-line rate and shows the result. Requires -filter.",
+    order: FILTER + 3,
+    allowEnvar: true
+  )]
+  public double Multiplier { get; set; } = double.NaN;
+  public bool MultiplierWasSet => App.CommandLineArguments.Any(IsMultiplierArgument) || Environment.GetEnvironmentVariable("linerate_multiplier") is not null;
+
+  private static bool IsMultiplierArgument( string argument )
+  {
+    var normalized = argument.TrimStart('-', '/', '!');
+    return normalized.Equals("multiplier", StringComparison.InvariantCultureIgnoreCase);
+  }
+
   // ── Display ──────────────────────────────────────────────────────────
 
   [AppArgument(
     namedParameters: ["window", "rolling-window"],
-    description: "Seconds of recent output to average for lps and mps rates.",
+    description: "Seconds of recent output to average for lines/sec and matches/sec rates.",
     order: DISPLAY + 1,
     defaultIfMissing: 10,
     allowEnvar: true

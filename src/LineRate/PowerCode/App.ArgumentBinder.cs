@@ -248,6 +248,8 @@ internal static partial class App
 					paramProp.SetValue(target, boolDefault);
 				} else if (paramProp.PropertyType == typeof(int) && attr.DefaultIfMissing is int intDefault) {
 					paramProp.SetValue(target, intDefault);
+				} else if (paramProp.PropertyType == typeof(double) && attr.DefaultIfMissing is double doubleDefault) {
+					paramProp.SetValue(target, doubleDefault);
 				} else if (paramProp.PropertyType == typeof(string) && attr.DefaultIfMissing is string stringDefault) {
 					paramProp.SetValue(target, stringDefault);
 				} else if (paramProp.PropertyType == typeof(string[])) {
@@ -313,6 +315,15 @@ internal static partial class App
 						paramProp.SetValue(target, intValue);
 					} else {
 						Console.WriteLine($"Invalid or missing integer value for argument: {arg}");
+						exit_code = -101;
+					}
+				} else if (paramProp.PropertyType == typeof(double)) {
+					// Decimal parameter
+					i = GetSubArgument(CommandLineArguments, i, out var found, out var value, ignoreFlagSymbols: true);
+					if (found && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleValue)) {
+						paramProp.SetValue(target, doubleValue);
+					} else {
+						Console.WriteLine($"Invalid or missing decimal value for argument: {arg}");
 						exit_code = -101;
 					}
 				} else if (paramProp.PropertyType == typeof(string[])) {
@@ -382,7 +393,7 @@ internal static partial class App
 						exit_code = -100;
 					}
 				} else {
-					Console.WriteLine($"Unsupported parameter type for argument: {arg} (must be bool, int, string, or enum)");
+					Console.WriteLine($"Unsupported parameter type for argument: {arg} (must be bool, int, double, string, or enum)");
 					exit_code = -102;
 				}
 			}
@@ -490,6 +501,12 @@ internal static partial class App
 								paramProp.SetValue(target, intVal);
 							} else {
 								Console.WriteLine($"Invalid integer value for environment variable {envarName}: {envVal}");
+							}
+						} else if (paramProp.PropertyType == typeof(double)) {
+							if (double.TryParse(envVal, NumberStyles.Float, CultureInfo.InvariantCulture, out var doubleVal)) {
+								paramProp.SetValue(target, doubleVal);
+							} else {
+								Console.WriteLine($"Invalid decimal value for environment variable {envarName}: {envVal}");
 							}
 						} else if (paramProp.PropertyType == typeof(string)) {
 							paramProp.SetValue(target, envVal);

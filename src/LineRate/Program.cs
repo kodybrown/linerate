@@ -93,6 +93,20 @@ Features:
       }
     }
 
+    if (_opt.MultiplierWasSet) {
+      if (filter is null) {
+        Console.Error.WriteLine("**** Multiplier requires -filter. ****");
+        App.PauseIfNeeded(_opt.Pause, exitCode: 1);
+        return 4;
+      }
+
+      if (!double.IsFinite(_opt.Multiplier)) {
+        Console.Error.WriteLine("**** Multiplier must be a finite number. ****");
+        App.PauseIfNeeded(_opt.Pause, exitCode: 1);
+        return 4;
+      }
+    }
+
     if (!_opt.FileWasSet && !App.IsInputRedirected) {
       Console.Error.WriteLine("**** Missing input. Pipe stdin or specify -f <logfile>. ****");
       App.ShowHelpSuggestion();
@@ -102,12 +116,13 @@ Features:
 
     var stats = new LineStats(TimeSpan.FromSeconds(_opt.Window));
     var showMatching = filter is not null;
+    var multiplier = _opt.MultiplierWasSet ? _opt.Multiplier : (double?)null;
 
     try {
       using var output = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), bufferSize: 1024 * 1024) {
         NewLine = Environment.NewLine
       };
-      var context = new OutputContext(output, stats, filter, showMatching, _opt.Tail);
+      var context = new OutputContext(output, stats, filter, showMatching, multiplier, _opt.Tail);
 
       if (_opt.FileWasSet) {
         await FollowFile(_opt.File!, _opt.FromStart, context).ConfigureAwait(false);
@@ -279,6 +294,7 @@ internal sealed class OutputContext
   private readonly Regex? _filter;
   private readonly bool _showMatching;
   private readonly LineStats _stats;
+  private readonly double? _multiplier;
   private readonly bool _tail;
   private readonly StreamWriter _writer;
   private int _lastStatusLength;
@@ -286,12 +302,13 @@ internal sealed class OutputContext
   private long _lastFlush = Stopwatch.GetTimestamp();
   private long _lastStatus = 0;
 
-  public OutputContext( StreamWriter writer, LineStats stats, Regex? filter, bool showMatching, bool tail )
+  public OutputContext( StreamWriter writer, LineStats stats, Regex? filter, bool showMatching, double? multiplier, bool tail )
   {
     _writer = writer;
     _stats = stats;
     _filter = filter;
     _showMatching = showMatching;
+    _multiplier = multiplier;
     _tail = tail;
   }
 
@@ -323,7 +340,7 @@ internal sealed class OutputContext
       return;
     }
 
-    _writer.Write(FormatPrefix(_stats, _showMatching));
+    _writer.Write(FormatPrefix(_stats, _showMatching, _multiplier));
     _writer.WriteLine(line);
 
     _linesSinceFlush++;
@@ -339,7 +356,7 @@ internal sealed class OutputContext
       return;
     }
 
-    var status = FormatStatus(_stats, _showMatching);
+    var status = FormatStatus(_stats, _showMatching, _multiplier);
     var padding = Math.Max(0, _lastStatusLength - status.Length);
 
     _writer.Write('\r');
@@ -353,20 +370,26 @@ internal sealed class OutputContext
     _lastStatus = now;
   }
 
-  private static string FormatPrefix( LineStats stats, bool showMatching )
-    => FormatStatus(stats, showMatching) + " ";
+  private static string FormatPrefix( LineStats stats, bool showMatching, double? multiplier )
+    => FormatStatus(stats, showMatching, multiplier) + " ";
 
-  private static string FormatStatus( LineStats stats, bool showMatching )
+  private static string FormatStatus( LineStats stats, bool showMatching, double? multiplier )
   {
     var lineRate = stats.LineRate;
 
     if (showMatching) {
       var matchingRate = stats.MatchingRate;
-      return $"[ {lineRate,7:0.0} lps / {matchingRate,7:0.0} mps ]";
+      if (multiplier is not null) {
+        var multipliedRate = matchingRate * multiplier.Value;
+        return $"[ {lineRate,7:0.0} lines/sec / {matchingRate,7:0.0} matches/sec = {multipliedRate,7:0.0} ]";
+      }
+
+      return $"[ {lineRate,7:0.0} lines/sec / {matchingRate,7:0.0} matches/sec ]";
     }
 
-    return $"[ {lineRate,7:0.0} lps ]";
+    return $"[ {lineRate,7:0.0} lines/sec ]";
   }
+
 }
 
 internal sealed class LineStats
