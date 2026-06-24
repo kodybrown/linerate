@@ -381,13 +381,13 @@ internal sealed class OutputContext
       var matchingRate = stats.MatchingRate;
       if (multiplier is not null) {
         var multipliedRate = matchingRate * multiplier.Value;
-        return $"[ {lineRate,7:0.0} lines/sec / {matchingRate,7:0.0} matches/sec = {multipliedRate,7:0.0} ]";
+        return $"[ {lineRate,9:#,##0.0} lines/sec / {matchingRate,9:#,##0.0} matches/sec = {multipliedRate,9:#,##0.0} ]";
       }
 
-      return $"[ {lineRate,7:0.0} lines/sec / {matchingRate,7:0.0} matches/sec ]";
+      return $"[ {lineRate,9:#,##0.0} lines/sec / {matchingRate,9:#,##0.0} matches/sec ]";
     }
 
-    return $"[ {lineRate,7:0.0} lines/sec ]";
+    return $"[ {lineRate,9:#,##0.0} lines/sec ]";
   }
 
 }
