@@ -35,3 +35,5 @@ Use `-tail` to show tailed log output too:
 `-f` follows a log file from the end by default, like `tail -f`. Use `-from-start` to read existing content first. `lines/sec` is total lines per second. `matched-lines/sec` is matching lines per second when `-filter` is provided. Use `-multiplier [number]` with `-filter` to show `multiplier * matched-lines/sec` as `matches/sec`.
 
 Use `-sum-matches` with a filter containing exactly one `(\d+)` capture group to sum captured numeric values into the rolling `matches/sec` rate. `-sum-matches` and `-multiplier` cannot be used together. Rates are rolling averages over the last 10 seconds by default; use `-window [seconds]` to change that.
+
+Press Ctrl+C to quit while following a file.
