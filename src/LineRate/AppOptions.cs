@@ -137,12 +137,24 @@ internal sealed class AppOptions
 
   [AppArgument(
     namedParameters: ["multiplier"],
-    description: "Multiplies the matching-line rate and shows the result. Requires -filter.",
+    description: "Multiplies the matched-line rate and shows the result. Requires -filter.",
     order: FILTER + 3,
     allowEnvar: true
   )]
   public double Multiplier { get; set; } = double.NaN;
   public bool MultiplierWasSet => App.CommandLineArguments.Any(IsMultiplierArgument) || Environment.GetEnvironmentVariable("linerate_multiplier") is not null;
+
+  [AppArgument(
+    namedParameters: ["sum-matches"],
+    description: "Sums the numeric filter capture values and shows their rolling rate. Requires -filter and one (\\d+) capture group.",
+    order: FILTER + 4,
+    valueIsOptional: true,
+    defaultIfNoValue: true,
+    defaultIfMissing: false,
+    allowEnvar: true
+  )]
+  public bool SumMatches { get; set; }
+  public bool SumMatchesWasSet => SumMatches;
 
   private static bool IsMultiplierArgument( string argument )
   {
@@ -154,7 +166,7 @@ internal sealed class AppOptions
 
   [AppArgument(
     namedParameters: ["window", "rolling-window"],
-    description: "Seconds of recent output to average for lines/sec and matches/sec rates.",
+    description: "Seconds of recent output to average for rolling rates.",
     order: DISPLAY + 1,
     defaultIfMissing: 10,
     allowEnvar: true

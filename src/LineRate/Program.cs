@@ -25,6 +25,7 @@
 namespace LineRate;
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -93,6 +94,12 @@ Features:
       }
     }
 
+    if (_opt.MultiplierWasSet && _opt.SumMatchesWasSet) {
+      Console.Error.WriteLine("**** Multiplier and sum-matches cannot be used together. ****");
+      App.PauseIfNeeded(_opt.Pause, exitCode: 1);
+      return 4;
+    }
+
     if (_opt.MultiplierWasSet) {
       if (filter is null) {
         Console.Error.WriteLine("**** Multiplier requires -filter. ****");
@@ -107,6 +114,20 @@ Features:
       }
     }
 
+    if (_opt.SumMatchesWasSet) {
+      if (filter is null) {
+        Console.Error.WriteLine("**** Sum-matches requires -filter. ****");
+        App.PauseIfNeeded(_opt.Pause, exitCode: 1);
+        return 5;
+      }
+
+      if (!HasSingleNumericCaptureGroup(_opt.Filter!)) {
+        Console.Error.WriteLine("**** Sum-matches requires exactly one (\\d+) capture group in -filter. ****");
+        App.PauseIfNeeded(_opt.Pause, exitCode: 1);
+        return 5;
+      }
+    }
+
     if (!_opt.FileWasSet && !App.IsInputRedirected) {
       Console.Error.WriteLine("**** Missing input. Pipe stdin or specify -f <logfile>. ****");
       App.ShowHelpSuggestion();
@@ -117,12 +138,13 @@ Features:
     var stats = new LineStats(TimeSpan.FromSeconds(_opt.Window));
     var showMatching = filter is not null;
     var multiplier = _opt.MultiplierWasSet ? _opt.Multiplier : (double?)null;
+    var sumMatches = _opt.SumMatchesWasSet;
 
     try {
       using var output = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), bufferSize: 1024 * 1024) {
         NewLine = Environment.NewLine
       };
-      var context = new OutputContext(output, stats, filter, showMatching, multiplier, _opt.Tail);
+      var context = new OutputContext(output, stats, filter, showMatching, multiplier, sumMatches, _opt.Tail);
 
       if (_opt.FileWasSet) {
         await FollowFile(_opt.File!, _opt.FromStart, context).ConfigureAwait(false);
@@ -237,6 +259,49 @@ Features:
   private static extern bool GetFileInformationByHandle( SafeHandle fileHandle, out ByHandleFileInformation fileInformation );
 
 
+  private static bool HasSingleNumericCaptureGroup( string pattern )
+  {
+    var captureGroups = GetCaptureGroupPatterns(pattern).ToArray();
+    return captureGroups.Length == 1 && captureGroups[0] == @"\d+";
+  }
+
+  private static IEnumerable<string> GetCaptureGroupPatterns( string pattern )
+  {
+    for (var i = 0; i < pattern.Length; i++) {
+      if (pattern[i] == '\\') {
+        i++;
+        continue;
+      }
+
+      if (pattern[i] != '(') {
+        continue;
+      }
+
+      if (i + 1 < pattern.Length && pattern[i + 1] == '?') {
+        continue;
+      }
+
+      var start = i + 1;
+      var depth = 1;
+      for (i++; i < pattern.Length; i++) {
+        if (pattern[i] == '\\') {
+          i++;
+          continue;
+        }
+
+        if (pattern[i] == '(') {
+          depth++;
+        } else if (pattern[i] == ')') {
+          depth--;
+          if (depth == 0) {
+            yield return pattern[start..i];
+            break;
+          }
+        }
+      }
+    }
+  }
+
   private void ShowExamples()
   {
     App.ShowHeader(includeDescription: false, includeBuildInfo: false);
@@ -295,6 +360,7 @@ internal sealed class OutputContext
   private readonly bool _showMatching;
   private readonly LineStats _stats;
   private readonly double? _multiplier;
+  private readonly bool _sumMatches;
   private readonly bool _tail;
   private readonly StreamWriter _writer;
   private int _lastStatusLength;
@@ -302,13 +368,14 @@ internal sealed class OutputContext
   private long _lastFlush = Stopwatch.GetTimestamp();
   private long _lastStatus = 0;
 
-  public OutputContext( StreamWriter writer, LineStats stats, Regex? filter, bool showMatching, double? multiplier, bool tail )
+  public OutputContext( StreamWriter writer, LineStats stats, Regex? filter, bool showMatching, double? multiplier, bool sumMatches, bool tail )
   {
     _writer = writer;
     _stats = stats;
     _filter = filter;
     _showMatching = showMatching;
     _multiplier = multiplier;
+    _sumMatches = sumMatches;
     _tail = tail;
   }
 
@@ -332,15 +399,19 @@ internal sealed class OutputContext
 
   public void WriteLine( string line )
   {
-    var isMatch = _filter?.IsMatch(line) == true;
-    _stats.Record(isMatch);
+    var match = _filter?.Match(line);
+    var isMatch = match?.Success == true;
+    var matchValue = isMatch && _sumMatches
+      ? GetMatchValue(match!)
+      : null;
+    _stats.Record(isMatch, matchValue);
 
     if (!_tail) {
       WriteStatus(force: false);
       return;
     }
 
-    _writer.Write(FormatPrefix(_stats, _showMatching, _multiplier));
+    _writer.Write(FormatPrefix(_stats, _showMatching, _multiplier, _sumMatches));
     _writer.WriteLine(line);
 
     _linesSinceFlush++;
@@ -356,7 +427,7 @@ internal sealed class OutputContext
       return;
     }
 
-    var status = FormatStatus(_stats, _showMatching, _multiplier);
+    var status = FormatStatus(_stats, _showMatching, _multiplier, _sumMatches);
     var padding = Math.Max(0, _lastStatusLength - status.Length);
 
     _writer.Write('\r');
@@ -370,32 +441,50 @@ internal sealed class OutputContext
     _lastStatus = now;
   }
 
-  private static string FormatPrefix( LineStats stats, bool showMatching, double? multiplier )
-    => FormatStatus(stats, showMatching, multiplier) + " ";
+  private static double? GetMatchValue( Match match )
+  {
+    var value = match.Groups[1].Value;
+    if (!value.All(static c => c is >= '0' and <= '9')) {
+      return null;
+    }
 
-  private static string FormatStatus( LineStats stats, bool showMatching, double? multiplier )
+    return double.Parse(value, NumberStyles.None, CultureInfo.InvariantCulture);
+  }
+
+  private static string FormatPrefix( LineStats stats, bool showMatching, double? multiplier, bool sumMatches )
+    => FormatStatus(stats, showMatching, multiplier, sumMatches) + " ";
+
+  private static string FormatStatus( LineStats stats, bool showMatching, double? multiplier, bool sumMatches )
   {
     var lineRate = stats.LineRate;
 
     if (showMatching) {
       var matchingRate = stats.MatchingRate;
-      if (multiplier is not null) {
-        var multipliedRate = matchingRate * multiplier.Value;
-        return $"[ {lineRate,9:#,##0.0} lines/sec / {matchingRate,9:#,##0.0} matches/sec = {multipliedRate,9:#,##0.0} ]";
+      if (sumMatches) {
+        return $"[ {lineRate,9:#,##0.0} lines/sec | {matchingRate,9:#,##0.0} matched-lines/sec | {stats.SummedMatchRate,9:#,##0.0} matches/sec ]";
       }
 
-      return $"[ {lineRate,9:#,##0.0} lines/sec / {matchingRate,9:#,##0.0} matches/sec ]";
+      if (multiplier is not null) {
+        var multipliedRate = matchingRate * multiplier.Value;
+        return $"[ {lineRate,9:#,##0.0} lines/sec | {matchingRate,9:#,##0.0} matched-lines/sec | {multipliedRate,9:#,##0.0} matches/sec ]";
+      }
+
+      return $"[ {lineRate,9:#,##0.0} lines/sec | {matchingRate,9:#,##0.0} matched-lines/sec ]";
     }
 
     return $"[ {lineRate,9:#,##0.0} lines/sec ]";
   }
 
+
 }
+
+internal readonly record struct MatchedValue( long Ticks, double Value );
 
 internal sealed class LineStats
 {
   private readonly Stopwatch _elapsed = Stopwatch.StartNew();
   private readonly Queue<long> _matchingLineTicks = [];
+  private readonly Queue<MatchedValue> _matchedValues = [];
   private readonly Queue<long> _totalLineTicks = [];
   private readonly long _windowTicks;
 
@@ -420,17 +509,28 @@ internal sealed class LineStats
     }
   }
 
-  public void Record( bool isMatch )
+  public double SummedMatchRate {
+    get {
+      var now = _elapsed.ElapsedTicks;
+      Prune(now);
+      return GetRate(_matchedValues.Sum(x => x.Value), now);
+    }
+  }
+
+  public void Record( bool isMatch, double? matchedValue )
   {
     var now = _elapsed.ElapsedTicks;
     _totalLineTicks.Enqueue(now);
     if (isMatch) {
       _matchingLineTicks.Enqueue(now);
     }
+    if (matchedValue is not null) {
+      _matchedValues.Enqueue(new MatchedValue(now, matchedValue.Value));
+    }
     Prune(now);
   }
 
-  private double GetRate( int count, long now )
+  private double GetRate( double count, long now )
   {
     var elapsedTicks = Math.Max(1, now);
     var denominatorTicks = Math.Min(_windowTicks, elapsedTicks);
@@ -446,6 +546,9 @@ internal sealed class LineStats
     }
     while (_matchingLineTicks.Count > 0 && _matchingLineTicks.Peek() < cutoff) {
       _matchingLineTicks.Dequeue();
+    }
+    while (_matchedValues.Count > 0 && _matchedValues.Peek().Ticks < cutoff) {
+      _matchedValues.Dequeue();
     }
   }
 }
