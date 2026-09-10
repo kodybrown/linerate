@@ -1,4 +1,4 @@
-﻿/*!
+/*!
 	Copyright (C) 2008-2026 Kody Brown (kody@bricksoft.com).
 
 	MIT License:
@@ -26,33 +26,35 @@ namespace PowerCode;
 
 internal static partial class App
 {
-	public static void PauseIfNeeded( Pause pause, int exitCode = 0, string? message = null )
-	{
-		if (pause == Pause.Always || (pause == Pause.IfError && exitCode != 0)) {
-			Console.Write(message ?? "Press any key to continue: ");
-			Console.ReadKey(intercept: true);
-			Console.WriteLine();
-		}
-	}
+  public static Verbosity AppDebug { get; set; } = Verbosity.None;
 
-	public static void WriteDebug( string text )
-	{
-		if (AppDebug != Verbosity.None) {
-			Console.WriteLine(text);
-		}
-	}
+  public static void PauseIfNeeded( Pause pause, int exitCode = 0, string? message = null )
+  {
+    if (pause == Pause.Always || (pause == Pause.IfError && exitCode != 0)) {
+      Console.Write(message ?? "Press any key to continue: ");
+      Console.ReadKey(intercept: true);
+      Console.WriteLine();
+    }
+  }
 
-	public static void WriteDebug( Verbosity debug, string text )
-	{
-		if ((int)AppDebug >= (int)debug) {
-			Console.WriteLine(text);
-		}
-	}
+  public static void WriteDebug( string text )
+  {
+    if (AppDebug != Verbosity.None) {
+      Console.WriteLine(text);
+    }
+  }
 
-	public static void WriteDebug( Verbosity debug, string format, params object[] p )
-	{
-		if ((int)AppDebug >= (int)debug) {
-			Console.WriteLine(string.Format(format, p));
-		}
-	}
+  public static void WriteDebug( Verbosity debug, string text )
+  {
+    if ((int)AppDebug >= (int)debug) {
+      Console.WriteLine(text);
+    }
+  }
+
+  public static void WriteDebug( Verbosity debug, string format, params object[] p )
+  {
+    if ((int)AppDebug >= (int)debug) {
+      Console.WriteLine(string.Format(format, p));
+    }
+  }
 }

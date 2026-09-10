@@ -1,4 +1,4 @@
-﻿/*!
+/*!
 	Copyright (C) 2008-2026 Kody Brown (kody@bricksoft.com).
 
 	MIT License:

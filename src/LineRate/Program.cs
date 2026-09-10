@@ -36,26 +36,29 @@ public class Program
   public static async Task<int> Main( string[] arguments )
     => await new Program().Run(arguments);
 
+  private CliArgumentBinder _app = null!;
   private readonly AppOptions _opt = new();
 
   public Program()
   {
-    App.AppName = "linerate";
-    App.AppDescription = @"A pipe-friendly console utility that prefixes stdin or followed log lines with line throughput.
-Features:
-- follows a log file with -f, starting at the end by default
-- also supports stdin pipe input
-- prefixes each line with rolling average line rate
-- optionally prefixes each line with matching-line rate for a regex filter";
-    App.AppProduct = "PowerTools";
-    App.AppAuthors = "Kody Brown (@kodybrown)";
-    App.AppCopyright = "Copyright (c) 2026 Kody Brown";
-    App.AppEnvarPrefix = "linerate_";
-    App.AppRepositoryUrl = "https://github.com/kodybrown/linerate";
   }
 
   public async Task<int> Run( string[] arguments )
   {
+    _app = new CliArgumentBinder(arguments, appName: "linerate") {
+      AppDescription = @"A pipe-friendly console utility that prefixes stdin or followed log lines with line throughput.
+Features:
+- follows a log file with -f, starting at the end by default
+- also supports stdin pipe input
+- prefixes each line with rolling average line rate
+- optionally prefixes each line with matching-line rate for a regex filter",
+      AppProduct = "PowerTools",
+      AppAuthors = "Kody Brown (@kodybrown)",
+      AppCopyright = "Copyright (c) 2026 Kody Brown",
+      AppEnvarPrefix = "linerate_",
+      AppRepositoryUrl = "https://github.com/kodybrown/linerate"
+    };
+
     using var quit = new QuitController();
     var cursor = ConsoleCursor.Hide();
 
@@ -68,7 +71,7 @@ Features:
 
   private async Task<int> RunCore( string[] arguments, CancellationToken cancellationToken )
   {
-    var parse = App.ParseCommandLineArguments(arguments, _opt, allowEnvars: true);
+    var parse = _app.ParseAndBind(_opt, allowEnvarValues: true);
     if (parse.ShouldExit) {
       return parse.ExitCode;
     }
@@ -77,9 +80,9 @@ Features:
       if (_opt.Help is "examples" or "show-examples" || _opt.ShowExamples) {
         ShowExamples();
       } else if (_opt.Help is "envars" or "show-envars" || _opt.ShowEnvars) {
-        App.ShowEnvars(_opt, showHeader: true);
+        _app.ShowCurrentEnvars(_opt, showHeader: true);
       } else {
-        App.ShowUsage(_opt, _opt.Help);
+        _app.ShowUsage(_opt, _opt.Help);
       }
       App.PauseIfNeeded(_opt.Pause);
       return 0;
@@ -142,7 +145,7 @@ Features:
 
     if (!_opt.FileWasSet && !App.IsInputRedirected) {
       Console.Error.WriteLine("**** Missing input. Pipe stdin or specify -f <logfile>. ****");
-      App.ShowHelpSuggestion();
+      _app.ShowHelpSuggestion();
       App.PauseIfNeeded(_opt.Pause, exitCode: 1);
       return 1;
     }
@@ -324,7 +327,7 @@ Features:
 
   private void ShowExamples()
   {
-    App.ShowHeader(includeDescription: false, includeBuildInfo: false);
+    _app.ShowHeader(includeDescription: false, includeBuildInfo: false);
 
     Console.WriteLine(@"EXAMPLES:
 ---------
@@ -384,7 +387,7 @@ internal sealed class QuitController : IDisposable
 
   public QuitController()
   {
-    _cancelHandler = (_, e) =>
+    _cancelHandler = ( _, e ) =>
     {
       e.Cancel = true;
       _cancellation.Cancel();
@@ -673,5 +676,3 @@ internal sealed class LineStats
     }
   }
 }
-
-

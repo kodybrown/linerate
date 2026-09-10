@@ -4,14 +4,14 @@ using PowerCode;
 
 internal sealed class AppOptions
 {
-  private const int COMMON = AppArgumentAttribute.DefaultGlobalOrder + 100;
-  private const int FILE = AppArgumentAttribute.DefaultPropertyOrder + 100;
-  private const int FILTER = AppArgumentAttribute.DefaultPropertyOrder + 200;
-  private const int DISPLAY = AppArgumentAttribute.DefaultPropertyOrder + 300;
+  private const int COMMON = CliArgumentAttribute.DefaultGlobalOrder + 100;
+  private const int FILE = CliArgumentAttribute.DefaultPropertyOrder + 100;
+  private const int FILTER = CliArgumentAttribute.DefaultPropertyOrder + 200;
+  private const int DISPLAY = CliArgumentAttribute.DefaultPropertyOrder + 300;
 
   // ── Common ───────────────────────────────────────────────────────────
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["help", "?", "h"],
     description: "Show help and usage information.",
     order: COMMON + 1,
@@ -23,7 +23,7 @@ internal sealed class AppOptions
   public string? Help { get; set; }
   public bool HelpWasSet => Help != null;
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["about"],
     description: "Show full app details.",
     order: COMMON + 3,
@@ -33,7 +33,7 @@ internal sealed class AppOptions
   )]
   public bool About { get; set; }
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["v"],
     description: "Show version (short).",
     order: COMMON + 10,
@@ -43,7 +43,7 @@ internal sealed class AppOptions
   )]
   public bool Version { get; set; }
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["version"],
     description: "Show full version details.",
     order: COMMON + 11,
@@ -53,7 +53,7 @@ internal sealed class AppOptions
   )]
   public bool VersionFull { get; set; }
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["pause"],
     description: "Pause before exiting always or when there's an error.",
     order: COMMON + 21,
@@ -64,14 +64,14 @@ internal sealed class AppOptions
   )]
   public Pause Pause { get; set; } = Pause.Never;
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["show-examples", "examples"],
     showInHelp: false,
     allowEnvar: false
   )]
   public bool ShowExamples { get; set; }
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["show-envars", "envars"],
     showInHelp: false,
     allowEnvar: false
@@ -80,7 +80,7 @@ internal sealed class AppOptions
 
   // ── File ─────────────────────────────────────────────────────────────
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["f", "file"],
     description: "Log file to follow. Starts at end of file like tail -f.",
     order: FILE + 1,
@@ -90,7 +90,7 @@ internal sealed class AppOptions
   public string? File { get; set; }
   public bool FileWasSet => !string.IsNullOrWhiteSpace(File);
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["from-start"],
     description: "Reads an existing file from the beginning before following new lines.",
     order: FILE + 2,
@@ -101,7 +101,7 @@ internal sealed class AppOptions
   )]
   public bool FromStart { get; set; }
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["tail"],
     description: "Shows tailed log lines instead of only repainting the stats line.",
     order: FILE + 3,
@@ -114,7 +114,7 @@ internal sealed class AppOptions
 
   // ── Filter ───────────────────────────────────────────────────────────
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["filter", "match"],
     description: "Regex used to count matching lines separately.",
     order: FILTER + 1,
@@ -124,7 +124,7 @@ internal sealed class AppOptions
   public string? Filter { get; set; }
   public bool FilterWasSet => !string.IsNullOrEmpty(Filter);
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["ignore-case", "i"],
     description: "Matches the filter regex without case sensitivity.",
     order: FILTER + 2,
@@ -135,16 +135,16 @@ internal sealed class AppOptions
   )]
   public bool IgnoreCase { get; set; }
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["multiplier"],
     description: "Multiplies the matched-line rate and shows the result. Requires -filter.",
     order: FILTER + 3,
     allowEnvar: true
   )]
   public double Multiplier { get; set; } = double.NaN;
-  public bool MultiplierWasSet => App.CommandLineArguments.Any(IsMultiplierArgument) || Environment.GetEnvironmentVariable("linerate_multiplier") is not null;
+  public bool MultiplierWasSet { get; private set; }
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["sum-matches"],
     description: "Sums the numeric filter capture values and shows their rolling rate. Requires -filter and one (\\d+) capture group.",
     order: FILTER + 4,
@@ -156,15 +156,9 @@ internal sealed class AppOptions
   public bool SumMatches { get; set; }
   public bool SumMatchesWasSet => SumMatches;
 
-  private static bool IsMultiplierArgument( string argument )
-  {
-    var normalized = argument.TrimStart('-', '/', '!');
-    return normalized.Equals("multiplier", StringComparison.InvariantCultureIgnoreCase);
-  }
-
   // ── Display ──────────────────────────────────────────────────────────
 
-  [AppArgument(
+  [CliArgument(
     namedParameters: ["window", "rolling-window"],
     description: "Seconds of recent output to average for rolling rates.",
     order: DISPLAY + 1,
