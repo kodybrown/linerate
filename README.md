@@ -36,4 +36,4 @@ Use `-tail` to show tailed log output too:
 
 Use `-sum-matches` with a filter containing exactly one `(\d+)` capture group to sum captured numeric values into the rolling `matches/sec` rate. `-sum-matches` and `-multiplier` cannot be used together. Rates are rolling averages over the last 10 seconds by default; use `-window [seconds]` to change that.
 
-Press Ctrl+C to quit while following a file.
+Press `Q`, `Ctrl+Q`, or `Ctrl+C` to quit while following a file.

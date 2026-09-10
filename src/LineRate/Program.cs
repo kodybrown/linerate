@@ -56,6 +56,18 @@ Features:
 
   public async Task<int> Run( string[] arguments )
   {
+    using var quit = new QuitController();
+    var cursor = ConsoleCursor.Hide();
+
+    try {
+      return await RunCore(arguments, quit.Token).ConfigureAwait(false);
+    } finally {
+      cursor.Restore();
+    }
+  }
+
+  private async Task<int> RunCore( string[] arguments, CancellationToken cancellationToken )
+  {
     var parse = App.ParseCommandLineArguments(arguments, _opt, allowEnvars: true);
     if (parse.ShouldExit) {
       return parse.ExitCode;
@@ -147,12 +159,14 @@ Features:
       var context = new OutputContext(output, stats, filter, showMatching, multiplier, sumMatches, _opt.Tail);
 
       if (_opt.FileWasSet) {
-        await FollowFile(_opt.File!, _opt.FromStart, context).ConfigureAwait(false);
+        await FollowFile(_opt.File!, _opt.FromStart, context, cancellationToken).ConfigureAwait(false);
       } else {
-        ReadStandardInput(context);
+        ReadStandardInput(context, cancellationToken);
       }
 
       output.Flush();
+    } catch (OperationCanceledException) {
+      return 0;
     } catch (IOException) {
       // Downstream closed the pipe. Exit quietly like standard pipe filters do.
       return 0;
@@ -162,23 +176,27 @@ Features:
     return 0;
   }
 
-  private static void ReadStandardInput( OutputContext context )
+  private static void ReadStandardInput( OutputContext context, CancellationToken cancellationToken )
   {
     using var input = new StreamReader(Console.OpenStandardInput(), Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 1024 * 1024);
     string? line;
     while ((line = input.ReadLine()) is not null) {
+      if (cancellationToken.IsCancellationRequested) {
+        break;
+      }
       context.WriteLine(line);
     }
     context.Flush(force: true);
   }
 
-  private static async Task FollowFile( string file, bool fromStart, OutputContext context )
+  private static async Task FollowFile( string file, bool fromStart, OutputContext context, CancellationToken cancellationToken )
   {
     var path = Path.GetFullPath(file);
     var readFromStart = fromStart;
 
     while (true) {
-      await WaitForFile(path).ConfigureAwait(false);
+      cancellationToken.ThrowIfCancellationRequested();
+      await WaitForFile(path, cancellationToken).ConfigureAwait(false);
       var lastKnownLength = 0L;
 
       using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 1024 * 1024, FileOptions.SequentialScan);
@@ -192,6 +210,7 @@ Features:
       using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 1024 * 1024, leaveOpen: true);
 
       while (true) {
+        cancellationToken.ThrowIfCancellationRequested();
         var line = reader.ReadLine();
         if (line is not null) {
           context.WriteLine(line);
@@ -200,7 +219,7 @@ Features:
         }
 
         context.Flush(force: false);
-        await Task.Delay(250).ConfigureAwait(false);
+        await Task.Delay(250, cancellationToken).ConfigureAwait(false);
 
         var currentState = TryGetFileState(path);
         if (currentState is null || currentState.Value != fileState) {
@@ -218,15 +237,16 @@ Features:
     }
   }
 
-  private static async Task WaitForFile( string path )
+  private static async Task WaitForFile( string path, CancellationToken cancellationToken )
   {
     while (true) {
+      cancellationToken.ThrowIfCancellationRequested();
       var state = TryGetFileState(path);
       if (state is not null) {
         return;
       }
 
-      await Task.Delay(250).ConfigureAwait(false);
+      await Task.Delay(250, cancellationToken).ConfigureAwait(false);
     }
   }
 
@@ -353,6 +373,107 @@ internal struct ByHandleFileInformation
 }
 
 internal readonly record struct FileState( uint VolumeSerialNumber, uint FileIndexHigh, uint FileIndexLow );
+
+internal sealed class QuitController : IDisposable
+{
+  private readonly CancellationTokenSource _cancellation = new();
+  private readonly ConsoleCancelEventHandler _cancelHandler;
+  private readonly Task? _keyMonitor;
+
+  public CancellationToken Token => _cancellation.Token;
+
+  public QuitController()
+  {
+    _cancelHandler = (_, e) =>
+    {
+      e.Cancel = true;
+      _cancellation.Cancel();
+    };
+    Console.CancelKeyPress += _cancelHandler;
+
+    if (!Console.IsInputRedirected) {
+      _keyMonitor = Task.Run(MonitorKeys);
+    }
+  }
+
+  public void Dispose()
+  {
+    _cancellation.Cancel();
+    Console.CancelKeyPress -= _cancelHandler;
+
+    try {
+      _keyMonitor?.Wait(TimeSpan.FromMilliseconds(250));
+    } catch (AggregateException) {
+    } catch (ObjectDisposedException) {
+    }
+
+    _cancellation.Dispose();
+  }
+
+  private async Task MonitorKeys()
+  {
+    while (!_cancellation.IsCancellationRequested) {
+      try {
+        if (Console.KeyAvailable) {
+          var key = Console.ReadKey(intercept: true);
+          if (key.Key == ConsoleKey.Q) {
+            _cancellation.Cancel();
+            return;
+          }
+        }
+
+        await Task.Delay(100, _cancellation.Token).ConfigureAwait(false);
+      } catch (InvalidOperationException) {
+        return;
+      } catch (IOException) {
+        return;
+      } catch (OperationCanceledException) {
+        return;
+      }
+    }
+  }
+}
+
+internal readonly record struct ConsoleCursor( bool ShouldRestore, bool WasVisible )
+{
+  public static ConsoleCursor Hide()
+  {
+    if (!OperatingSystem.IsWindows()) {
+      return default;
+    }
+
+    try {
+      var wasVisible = Console.CursorVisible;
+      Console.CursorVisible = false;
+      return new ConsoleCursor(true, wasVisible);
+    } catch (IOException) {
+      return default;
+    } catch (InvalidOperationException) {
+      return default;
+    } catch (PlatformNotSupportedException) {
+      return default;
+    }
+  }
+
+  public void Restore()
+  {
+    if (!ShouldRestore) {
+      return;
+    }
+
+    if (!OperatingSystem.IsWindows()) {
+      return;
+    }
+
+    try {
+      Console.CursorVisible = WasVisible;
+    } catch (IOException) {
+    } catch (InvalidOperationException) {
+    } catch (PlatformNotSupportedException) {
+    }
+  }
+}
+
 
 internal sealed class OutputContext
 {
