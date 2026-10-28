@@ -8,9 +8,11 @@ These instructions apply to every task in this repository.
 - Project type: `.NET console CLI`
 - Base directory: `~\Projects\linerate`
 - Integration checkout: `~\Projects\linerate`
-- Task worktree root: `~\Projects\linerate\worktrees\ai`
+- Task worktree root: `~\Projects\linerate\worktrees`
 - Integration branch: `main`
-- Task branch prefix: `codex/`
+- Task branch prefix: `feature/`, `bugfix/`, `hotfix/`, or `release/`,
+  according to the work. Use descriptive names such as `feature/<short-name>`.
+- Do not include `codex` or `ai` identifiers anywhere in new branch names.
 - Worktree mode: `direct-local-unless-requested`
 - Root Markdown policy: `canonical-restricted`
 
